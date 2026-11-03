@@ -1,0 +1,1 @@
+#se crea el git y se crea el archivo main.py en la carpeta de hardware con los parametros iniciales 
