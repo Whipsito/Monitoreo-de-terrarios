@@ -1,4 +1,4 @@
-# Monitoreo de Sensores con ESP32 y MicroPython
+# Monitoreo de terrarios utilizando sensores con ESP32 y MicroPython
 
 Este proyecto implementa un sistema de monitoreo ambiental utilizando una tarjeta **ESP32**, sensores de temperatura, humedad y luz, y visualización de datos tanto en una pantalla OLED como a través de una red Wi-Fi.
 
