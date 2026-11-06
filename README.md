@@ -1,4 +1,4 @@
-# 💻Monitoreo de Sensores con ESP32 y MicroPython
+# Monitoreo de Sensores con ESP32 y MicroPython
 
 Este proyecto implementa un sistema de monitoreo ambiental utilizando un microcontrolador **ESP32**, sensores de temperatura, humedad y luz, y visualización de datos tanto en una pantalla OLED como a través de una red Wi-Fi.
 
@@ -27,8 +27,6 @@ Este proyecto implementa un sistema de monitoreo ambiental utilizando un microco
 
 ```text
 ├── hardware/
-│   ├── main.py         # Ciclo principal del sistema
-│   ├── config.py       # Configuración y control del hardware y sensores
-│   ├── config_wifi.py  # Módulo para la gestión y conexión Wi-Fi
-│   └── ssd1306.py      # Librería para controlar la pantalla OLED
-└── README.md           # Documentación del proyecto
+│   └── main.py       # Código principal y configuración inicial de hardware
+│   └── ssd1306.py    #libreria para controlar el display OLED
+└── README.md         # Documentación del proyecto
