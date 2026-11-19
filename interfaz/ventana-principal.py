@@ -2,6 +2,7 @@ import flet as ft
 from ui.estilos import *
 from ui.graficas import crear_grafica_temperatura, crear_indicador_circular
 from ui.eventos import crear_panel_eventos
+from ui.sensores import crear_vista_sensores
 
 # Tarjeta de metrica para mostrar valores de sensores
 def crear_tarjeta(titulo, valor, unidad, icono, color, porcentaje=None, subtitulo_extra=None):
@@ -82,11 +83,20 @@ def main(page: ft.Page):
         menu_lateral.visible = menu_abierto
         page.update()
 
-    # Cambia la opcion seleccionada del menu
+    # Cambia la opcion seleccionada del menu manteniendo la barra abierta
     def seleccionar_opcion(indice):
         nonlocal indice_seleccionado
         indice_seleccionado = indice
+        
+        # Cambia la vista activa con la transicion animada
+        area_contenido.content = vistas[indice]["contenido"]
+        
+        # Actualiza el titulo de la barra superior
+        subtitulo_pantalla.value = vistas[indice]["titulo"]
+        
+        # Actualiza el boton seleccionado en el menu
         menu_lateral.content = construir_menu()
+        
         page.update()
 
     # Construccion limpia de los botones del menu lateral
@@ -128,13 +138,16 @@ def main(page: ft.Page):
         on_click=alternar_menu,
     )
 
+    # Subtitulo que cambia dinamicamente segun la pantalla activa
+    subtitulo_pantalla = ft.Text("Dashboard", size=16, color=TEXTO_SEC)
+
     # Titulo de la aplicacion con el boton de menu
     titulo = ft.Row(
         controls=[
             boton_menu,
             ft.Icon(ft.Icons.ECO, size=28, color=VERDE),
             ft.Text("TerraPapu", size=26, weight=ft.FontWeight.BOLD, color=TEXTO),
-            ft.Text("Dashboard", size=16, color=TEXTO_SEC),
+            subtitulo_pantalla,
         ],
         spacing=8,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -276,7 +289,7 @@ def main(page: ft.Page):
         vertical_alignment=ft.CrossAxisAlignment.STRETCH,
     )
 
-    # Area de contenido del dashboard con margen interno
+    # Vista 0: Dashboard con margen interno
     cuerpo_dashboard = ft.Container(
         content=ft.Column(
             controls=[tarjetas, seccion_inferior],
@@ -287,13 +300,32 @@ def main(page: ft.Page):
         expand=True,
     )
 
-    # Estructura principal con barra superior fija y contenido expandido
+    # Vista 1: Sensores y Diagnostico de Hardware
+    vista_sensores = crear_vista_sensores()
+
+    # Mapeo de vistas para la navegacion
+    vistas = [
+        {"contenido": cuerpo_dashboard, "titulo": "Dashboard"},
+        {"contenido": vista_sensores, "titulo": "Estado de Hardware"},
+        {"contenido": cuerpo_dashboard, "titulo": "Configuración"},
+    ]
+
+    # Contenedor con transicion suave (FADE) entre vistas
+    area_contenido = ft.AnimatedSwitcher(
+        content=vistas[0]["contenido"],
+        transition=ft.AnimatedSwitcherTransition.FADE,
+        duration=300,
+        reverse_duration=300,
+        expand=True,
+    )
+
+    # Estructura principal con barra superior fija y contenido dinamico
     page.add(
         ft.Column(
             controls=[
                 barra_superior,
                 ft.Row(
-                    controls=[menu_lateral, cuerpo_dashboard],
+                    controls=[menu_lateral, area_contenido],
                     spacing=0,
                     expand=True,
                     vertical_alignment=ft.CrossAxisAlignment.STRETCH,
