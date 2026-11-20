@@ -1,6 +1,8 @@
 import flet as ft
 import ui.estilos as estilos
 from ui.estilos import *
+
+
 # Envuelve un TextField o Dropdown con su etiqueta por fuera y ancho completo
 def crear_campo_etiquetado(etiqueta, control, expand=False):
     return ft.Column(
@@ -38,7 +40,13 @@ def crear_bloque_config(titulo, icono, icono_color, controles, alto=None):
     )
 
 # Genera la vista completa de configuraciones del sistema
-def crear_vista_configuracion(on_cambiar_tema=None):
+def crear_vista_configuracion(
+    on_cambiar_tema=None,
+    on_cambiar_simulacion=None,
+    on_cambiar_ecosistema=None,
+    simulacion_activa=False,
+    ecosistema_seleccionado="Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
+):
 
     # 1. Seccion de perfil del terrario y tipo de especie
     campo_nombre = ft.TextField(
@@ -51,7 +59,7 @@ def crear_vista_configuracion(on_cambiar_tema=None):
     )
 
     selector_ecosistema = ft.Dropdown(
-        value="Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
+        value=ecosistema_seleccionado,
         options=[
             ft.dropdown.Option(
                 key="Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
@@ -78,6 +86,7 @@ def crear_vista_configuracion(on_cambiar_tema=None):
         border_color=PANEL_2,
         color=TEXTO,
         text_size=13,
+        on_select=on_cambiar_ecosistema,
     )
 
     bloque_perfil = crear_bloque_config(
@@ -143,7 +152,10 @@ def crear_vista_configuracion(on_cambiar_tema=None):
     switch_notificaciones = ft.Row(
         controls=[
             ft.Text("Notificaciones de escritorio (Windows)", size=13, color=TEXTO),
-            ft.Switch(value=True, active_color=VERDE),
+            ft.Switch(
+                value=True,
+                active_color=VERDE,
+            ),
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )
@@ -182,7 +194,11 @@ def crear_vista_configuracion(on_cambiar_tema=None):
                 ],
                 spacing=2,
             ),
-            ft.Switch(value=True, active_color=VERDE),
+            ft.Switch(
+                value=simulacion_activa,
+                active_color=VERDE,
+                on_change=on_cambiar_simulacion,
+            ),
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )

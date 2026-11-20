@@ -39,8 +39,8 @@ def crear_evento(hora, descripcion, color, es_alerta=False):
         border_radius=8,
     )
 
-# Panel contenedor de la lista de eventos y boton de exportacion
-def crear_panel_eventos():
+# Panel contenedor que recibe la lista y la accion de exportacion
+def crear_panel_eventos(lista_eventos, on_exportar=None):
 
     # Cabecera del panel centrada
     encabezado_panel = ft.Row(
@@ -52,20 +52,6 @@ def crear_panel_eventos():
         alignment=ft.MainAxisAlignment.CENTER,
     )
 
-    # Lista con las lecturas recientes con scroll automatico
-    lista_eventos = ft.Column(
-        controls=[
-            crear_evento("20:34:10", "T:25.4 °C | H:62% | L:80%", VERDE),
-            crear_evento("20:34:07", "T:25.3 °C | H:62% | L:80%", VERDE),
-            crear_evento("20:34:04", "T:25.3 °C | H:61% | L:79%", VERDE),
-            crear_evento("20:34:01", "ALERTA: Temp alta 39.5 °C", ROJO, es_alerta=True),
-            crear_evento("20:33:58", "T:25.2 °C | H:60% | L:78%", VERDE),
-        ],
-        spacing=10,
-        expand=True,
-        scroll=ft.ScrollMode.AUTO,
-    )
-
     # Boton centrado para exportar a CSV
     boton_exportar = ft.Row(
         controls=[
@@ -75,6 +61,7 @@ def crear_panel_eventos():
                 color=TEXTO,
                 bgcolor=PANEL_2,
                 height=38,
+                on_click=on_exportar,
             )
         ],
         alignment=ft.MainAxisAlignment.CENTER,
@@ -96,3 +83,27 @@ def crear_panel_eventos():
         border_radius=12,
         expand=2,
     )
+
+
+# Redibuja las filas visibles usando los eventos más recientes
+def actualizar_lista_eventos(lista_eventos, eventos):
+    filas = []
+    for evento in eventos:
+        es_alerta = evento["led"] == "ALTA"
+        descripcion = (
+            f"ALERTA: {evento['temperatura']} °C"
+            if es_alerta
+            else f"T:{evento['temperatura']} °C | H:{evento['humedad']}% | L:{evento['luz']}%"
+        )
+        filas.append(
+            crear_evento(
+                evento["hora"],
+                descripcion,
+                ROJO if es_alerta else VERDE,
+                es_alerta=es_alerta,
+            )
+        )
+
+    lista_eventos.controls = filas or [
+        ft.Text("Esperando lecturas...", size=13, color=TEXTO_SEC)
+    ]

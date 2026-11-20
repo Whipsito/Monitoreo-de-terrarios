@@ -1,9 +1,16 @@
+import asyncio
+from datetime import datetime
+
 import flet as ft
+import flet_charts as fch
 from ui.estilos import *
 from ui.graficas import crear_grafica_temperatura, crear_indicador_circular
-from ui.eventos import crear_panel_eventos
+from ui.eventos import crear_panel_eventos, actualizar_lista_eventos
 from ui.sensores import crear_vista_sensores
 from ui.configuracion import crear_vista_configuracion
+from services.simulador import generar_lectura_simulada
+from services.registro_eventos import RegistroEventos
+
 
 # Tarjeta de metrica para mostrar valores de sensores
 def crear_tarjeta(titulo, valor, unidad, icono, color, porcentaje=None, subtitulo_extra=None):
@@ -67,6 +74,13 @@ def main(page: ft.Page):
     page.window.resizable = True
     page.bgcolor = FONDO
     page.padding = 0
+    modo_simulacion = {"activo": False}
+    estado_datos = {
+        "ecosistema": "Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
+        "lectura": None,
+    }
+    registro = RegistroEventos()
+    controles_simulacion = {}
 
     # Estado de la barra lateral y vista activa (persisten al cambiar de tema)
     menu_abierto = False
@@ -169,7 +183,13 @@ def main(page: ft.Page):
             content=ft.Row(
                 controls=[
                     ft.Icon(ft.Icons.CIRCLE, size=10, color=VERDE),
-                    ft.Text("Conectado", size=13, color=TEXTO),
+                    (
+                        texto_estado_conexion := ft.Text(
+                            "Modo simulación" if modo_simulacion["activo"] else "Esperando ESP32",
+                            size=13,
+                            color=TEXTO,
+                        )
+                    ),
                 ],
                 spacing=8,
             ),
@@ -180,10 +200,26 @@ def main(page: ft.Page):
 
         # Etiqueta con la hora de la ultima lectura recibida
         texto_ultima_lectura = ft.Text(
-            "Última: 20:34:10", 
+            "Datos de prueba" if modo_simulacion["activo"] else "Sin lecturas recibidas",
             size=13, 
             color=TEXTO_SEC
         )
+
+        # Refleja en la barra superior el modo elegido en Configuración
+        def cambiar_modo_simulacion(e):
+            modo_simulacion["activo"] = e.control.value
+            if e.control.value:
+                texto_estado_conexion.value = "Modo simulación"
+                texto_ultima_lectura.value = "Datos de prueba"
+            else:
+                texto_estado_conexion.value = "Esperando ESP32"
+                texto_ultima_lectura.value = "Sin lecturas recibidas"
+            page.update()
+
+        # Guarda el ecosistema seleccionado para el siguiente ciclo de simulacion
+        def cambiar_ecosistema(e):
+            estado_datos["ecosistema"] = e.control.value
+            estado_datos["lectura"] = None
 
         # Grupo derecho que reune la conexion y la hora
         info_conexion = ft.Row(
@@ -264,6 +300,8 @@ def main(page: ft.Page):
             spacing=16,
         )
 
+        grafica_temperatura = crear_grafica_temperatura()
+
         # Panel que contiene la grafica de temperatura y los medidores circulares
         panel_grafica = ft.Container(
             content=ft.Column(
@@ -277,7 +315,7 @@ def main(page: ft.Page):
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    crear_grafica_temperatura(),
+                    grafica_temperatura,
                     medidores_circulares,
                 ],
                 spacing=16,
@@ -289,8 +327,22 @@ def main(page: ft.Page):
             expand=3,
         )
 
-        # Panel que muestra la lista de eventos
-        panel_eventos = crear_panel_eventos()
+        # Lista que el simulador actualiza con cada lectura nueva
+        lista_eventos = ft.Column(
+            controls=[ft.Text("Esperando lecturas...", size=13, color=TEXTO_SEC)],
+            spacing=10,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+        # Exporta el historial y muestra el nombre del archivo generado
+        def exportar_eventos(e):
+            ruta_csv = registro.exportar_csv()
+            texto_ultima_lectura.value = f"CSV guardado: {ruta_csv.name}"
+            page.update()
+
+        # Panel que muestra las lecturas y permite exportarlas
+        panel_eventos = crear_panel_eventos(lista_eventos, exportar_eventos)
 
         # Seccion inferior que agrupa la grafica con medidores y los eventos
         seccion_inferior = ft.Row(
@@ -315,7 +367,13 @@ def main(page: ft.Page):
         vista_sensores = crear_vista_sensores()
 
         # Vista 2: Configuracion del Sistema (con callback de cambio de tema)
-        vista_configuracion = crear_vista_configuracion(on_cambiar_tema=cambiar_tema)
+        vista_configuracion = crear_vista_configuracion(
+            on_cambiar_tema=cambiar_tema,
+            on_cambiar_simulacion=cambiar_modo_simulacion,
+            on_cambiar_ecosistema=cambiar_ecosistema,
+            simulacion_activa=modo_simulacion["activo"],
+            ecosistema_seleccionado=estado_datos["ecosistema"],
+        )
 
         # Mapeo de vistas para la navegacion
         vistas = [
@@ -324,12 +382,17 @@ def main(page: ft.Page):
             {"contenido": vista_configuracion, "titulo": "Configuración"},
         ]
 
-        # Contenedor con transicion suave (FADE) entre vistas
-        area_contenido = ft.AnimatedSwitcher(
+        controles_simulacion.update(
+            tarjetas=tarjetas.controls,
+            medidores=medidores_circulares.controls,
+            grafica=grafica_temperatura,
+            hora=texto_ultima_lectura,
+            lista_eventos=lista_eventos,
+        )
+
+        # Contenedor de la vista activa sin transicion animada
+        area_contenido = ft.Container(
             content=vistas[indice_seleccionado]["contenido"],
-            transition=ft.AnimatedSwitcherTransition.FADE,
-            duration=300,
-            reverse_duration=300,
             expand=True,
         )
 
@@ -353,6 +416,74 @@ def main(page: ft.Page):
 
     # Carga inicial de la interfaz
     construir_interfaz()
+
+    # Actualiza las tarjetas y la grafica cada tres segundos en modo demo
+    async def actualizar_datos_simulados():
+        while True:
+            await asyncio.sleep(3)
+            if not modo_simulacion["activo"] or not controles_simulacion:
+                continue
+
+            lectura = generar_lectura_simulada(
+                estado_datos["ecosistema"],
+                estado_datos["lectura"],
+            )
+            estado_datos["lectura"] = lectura
+            registro.agregar_lectura(lectura)
+            temperatura = lectura["temperatura"]
+            humedad = lectura["humedad"]
+            luz = lectura["luz"]
+            led_encendido = lectura["led"] == "ALTA"
+
+            lecturas = [temperatura, humedad, luz]
+            barras = [temperatura / 50, humedad / 100, luz / 100]
+            tarjetas_actuales = controles_simulacion["tarjetas"]
+
+            for indice, valor in enumerate(lecturas):
+                contenido = tarjetas_actuales[indice].content
+                contenido.controls[1].controls[0].value = str(valor)
+                contenido.controls[2].value = barras[indice]
+
+            valores_medidores = [humedad, luz]
+            porcentajes_medidores = [humedad / 100, luz / 100]
+            for indice, valor in enumerate(valores_medidores):
+                medidor = controles_simulacion["medidores"][indice].content
+                anillo = medidor.controls[1]
+                anillo.controls[0].value = porcentajes_medidores[indice]
+                anillo.controls[1].content.value = f"{valor:.0f}%"
+
+            tarjeta_led = tarjetas_actuales[3].content
+            tarjeta_led.controls[1].controls[0].value = "ALTA" if led_encendido else "OK"
+            tarjeta_led.controls[2].value = "LED: ON" if led_encendido else "LED: OFF"
+
+            actualizar_lista_eventos(
+                controles_simulacion["lista_eventos"],
+                registro.obtener_recientes(),
+            )
+
+            grafica = controles_simulacion["grafica"]
+            puntos_actuales = grafica.data_series[0].points
+            valores_grafica = [punto.y for punto in puntos_actuales]
+            valores_grafica = (valores_grafica + [temperatura])[-20:]
+            grafica.data_series = [
+                fch.LineChartData(
+                    points=[
+                        fch.LineChartDataPoint(indice, valor)
+                        for indice, valor in enumerate(valores_grafica)
+                    ],
+                    color=AZUL,
+                    stroke_width=3,
+                    curved=True,
+                    point=True,
+                )
+            ]
+            grafica.max_x = max(5, len(valores_grafica) - 1)
+            controles_simulacion["hora"].value = (
+                f"Última: {datetime.now().strftime('%H:%M:%S')}"
+            )
+            page.update()
+
+    page.run_task(actualizar_datos_simulados)
 
 # Punto de inicio de la aplicacion
 ft.run(main)
