@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime
+from pathlib import Path
 
 import flet as ft
 import flet_charts as fch
@@ -69,6 +70,7 @@ def main(page: ft.Page):
     
     # Propiedades generales de la ventana unida a los bordes
     page.title = "TerraPapu"
+    page.window.icon = str(Path(__file__).resolve().parent / "assets" / "app.ico")
     page.window.width = 1280
     page.window.height = 720
     page.window.resizable = True
