@@ -90,11 +90,12 @@ def actualizar_lista_eventos(lista_eventos, eventos):
     filas = []
     for evento in eventos:
         es_alerta = evento["led"] == "ALTA"
-        descripcion = (
-            f"ALERTA: {evento['temperatura']} °C"
-            if es_alerta
-            else f"T:{evento['temperatura']} °C | H:{evento['humedad']}% | L:{evento['luz']}%"
-        )
+        if evento.get("origen") == "prueba termica":
+            descripcion = f"PRUEBA TÉRMICA: {evento['temperatura']} °C"
+        elif es_alerta:
+            descripcion = f"ALERTA: {evento['temperatura']} °C"
+        else:
+            descripcion = f"T:{evento['temperatura']} °C | H:{evento['humedad']}% | L:{evento['luz']}%"
         filas.append(
             crear_evento(
                 evento["hora"],

@@ -1,6 +1,13 @@
 import random
 
 
+def generar_valor_sensor(anterior=None):
+    """Genera un valor de prueba de 0 a 100 para un sensor agregado."""
+    if anterior is None:
+        return round(random.uniform(25, 75))
+    return max(0, min(100, anterior + random.randint(-5, 5)))
+
+
 # Rangos orientativos para generar lecturas plausibles por ecosistema.
 RANGOS_ECOSISTEMA = {
     "tropical": {
@@ -26,7 +33,7 @@ RANGOS_ECOSISTEMA = {
 }
 
 
-def generar_lectura_simulada(ecosistema, lectura_anterior=None):
+def generar_lectura_simulada(ecosistema, lectura_anterior=None, umbral=39.0):
     """Genera una lectura estable dentro de los rangos del ecosistema elegido."""
     nombre = ecosistema.lower()
     perfil = next(
@@ -49,5 +56,5 @@ def generar_lectura_simulada(ecosistema, lectura_anterior=None):
         "temperatura": temperatura,
         "humedad": humedad,
         "luz": luz,
-        "led": "ALTA" if temperatura > 39.0 else "OK",
+        "led": "ALTA" if temperatura > umbral else "OK",
     }

@@ -1,19 +1,15 @@
 import flet as ft
 import flet_charts as fch
-from ui.estilos import AZUL, AMARILLO, PANEL_2, TEXTO, TEXTO_SEC
+from ui.estilos import AZUL, AMARILLO, PANEL, PANEL_2, TEXTO, TEXTO_SEC
 
 # Genera la grafica de linea para la temperatura
-def crear_grafica_temperatura():
+def crear_grafica_linea(valores=(), minimo=20, maximo=40, paso=5, unidad="°C"):
 
     # Serie de datos con los puntos de temperatura y puntos visibles
     serie_temperatura = fch.LineChartData(
         points=[
-            fch.LineChartDataPoint(0, 24.8),
-            fch.LineChartDataPoint(1, 25.1),
-            fch.LineChartDataPoint(2, 25.4),
-            fch.LineChartDataPoint(3, 25.2),
-            fch.LineChartDataPoint(4, 25.8),
-            fch.LineChartDataPoint(5, 25.5),
+            fch.LineChartDataPoint(indice, valor)
+            for indice, valor in enumerate(valores)
         ],
         color=AZUL,
         stroke_width=3,
@@ -24,11 +20,8 @@ def crear_grafica_temperatura():
     # Configuracion de ejes con valores de temperatura
     eje_izquierdo = fch.ChartAxis(
         labels=[
-            fch.ChartAxisLabel(value=20, label=ft.Text("20°C", size=11, color=TEXTO_SEC)),
-            fch.ChartAxisLabel(value=25, label=ft.Text("25°C", size=11, color=TEXTO_SEC)),
-            fch.ChartAxisLabel(value=30, label=ft.Text("30°C", size=11, color=TEXTO_SEC)),
-            fch.ChartAxisLabel(value=35, label=ft.Text("35°C", size=11, color=TEXTO_SEC)),
-            fch.ChartAxisLabel(value=40, label=ft.Text("40°C", size=11, color=TEXTO_SEC)),
+            fch.ChartAxisLabel(value=marca, label=ft.Text(f"{marca}{unidad}", size=11, color=TEXTO_SEC))
+            for marca in range(minimo, maximo + 1, paso)
         ],
         label_size=40,
     )
@@ -37,17 +30,58 @@ def crear_grafica_temperatura():
     return fch.LineChart(
         data_series=[serie_temperatura],
         min_x=0,
-        max_x=5,
-        min_y=20,
-        max_y=40,
+        max_x=max(5, len(valores) - 1),
+        min_y=minimo,
+        max_y=maximo,
         expand=True,
         left_axis=eje_izquierdo,
         horizontal_grid_lines=fch.ChartGridLines(
-            interval=5,
+            interval=paso,
             color=PANEL_2,
             width=1,
         ),
     )
+
+
+def crear_panel_sensor(sensor):
+    if sensor["visualizacion"] == "circular":
+        contenido = crear_indicador_circular("Porcentaje de prueba", "—", 0, ft.Icons.SENSORS, AZUL)
+        contenido.expand = None
+        anillo = contenido.content.controls[1]
+        progreso = anillo.controls[0]
+        etiqueta = anillo.controls[1].content
+
+        def actualizar(historial):
+            progreso.value = historial[-1] / 100 if historial else 0
+            etiqueta.value = f"{historial[-1]}%" if historial else "—"
+
+    else:
+        grafica = crear_grafica_linea(minimo=0, maximo=100, paso=25, unidad="")
+        grafica.expand = None
+        grafica.height = 110
+        etiqueta = ft.Text("Sin lecturas", size=13, color=TEXTO_SEC)
+        contenido = ft.Column([etiqueta, grafica], spacing=5)
+
+        def actualizar(historial):
+            etiqueta.value = f"Último valor: {historial[-1]}" if historial else "Sin lecturas"
+            grafica.data_series[0].points = [
+                fch.LineChartDataPoint(indice, valor)
+                for indice, valor in enumerate(historial)
+            ]
+            grafica.max_x = max(5, len(historial) - 1)
+
+    tarjeta = ft.Container(
+        col={"xs": 12, "md": 6, "xl": 4},
+        padding=12,
+        border_radius=12,
+        bgcolor=PANEL,
+        content=ft.Column(
+            [ft.Text(sensor["nombre"], color=TEXTO, size=15, weight=ft.FontWeight.BOLD), contenido],
+            spacing=8,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        ),
+    )
+    return tarjeta, actualizar
 
 # Crea un indicador circular de porcentaje con valor centrado
 def crear_indicador_circular(titulo, valor_texto, porcentaje, icono, color):

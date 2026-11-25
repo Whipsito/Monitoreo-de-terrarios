@@ -8,7 +8,13 @@ El ESP32 toma lecturas con un sensor DHT22 y una fotoresistencia LDR. También c
 
 La interfaz tiene tres vistas: Dashboard, Estado de Hardware y Configuración. En el Dashboard se muestran las tarjetas de temperatura, humedad, luz y estado del LED, además de una gráfica y el registro de eventos.
 
-La aplicación puede generar datos simulados. Al activarlos, las lecturas cambian cada tres segundos y sus rangos dependen del ecosistema seleccionado en Configuración. El registro se puede exportar a CSV; cada archivo se guarda en `exports/` con fecha y hora en el nombre. Git ignora esa carpeta.
+La simulación arranca apagada. Al encenderla en Configuración, el Dashboard genera lecturas según el ecosistema seleccionado. El intervalo predeterminado es de tres segundos y se puede cambiar junto con el umbral térmico. El simulador actualiza las tarjetas, la gráfica y el registro.
+
+En Configuración se pueden guardar las preferencias y restablecer los valores predeterminados. En Windows se guardan en `%LOCALAPPDATA%/TerraPapu/configuracion.json`. El tema y el ecosistema se aplican al seleccionarlos. Para conservarlos al cerrar, usa **Guardar Configuración**.
+
+Con la simulación activa, **Probar alerta térmica** crea una lectura marcada como prueba. **Simular pérdida de señal** pausa las lecturas hasta que recuperes la señal. Los avisos aparecen dentro de la aplicación y, si se habilitan, Windows puede mostrar una notificación de escritorio y reproducir el sonido configurado.
+
+El registro se puede exportar a CSV manualmente o de forma automática cada hora mientras la aplicación está abierta, si hay lecturas nuevas. Cada archivo se guarda en `exports/` con fecha y hora. **Limpiar historial** borra los eventos y la gráfica de la sesión. Los CSV ya exportados se conservan. Git ignora esa carpeta.
 
 ## Hardware
 
@@ -44,6 +50,8 @@ interfaz/
   services/
     simulador.py          # Generación de lecturas de prueba
     registro_eventos.py   # Historial y exportación CSV
+    preferencias.py      # Validación y almacenamiento local de la configuración
+    alertas.py           # Avisos de escritorio y sonido en Windows
     recibir_datos.py      # Pendiente: receptor HTTP para el ESP32
   ui/
     configuracion.py      # Vista de configuración

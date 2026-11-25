@@ -1,4 +1,5 @@
 import flet as ft
+from services.catalogo_sensores import VISUALIZACIONES
 from ui.estilos import *
 
 # Fila para una linea de especificacion tecnica
@@ -60,31 +61,96 @@ def crear_ficha_hardware(titulo, estado_texto, estado_color, pin_texto, especifi
                 cabecera,
                 info_pin,
                 ft.Divider(color=PANEL_2, height=1),
-                ft.Column(controls=filas_specs, spacing=8, expand=True),
+                ft.Column(controls=filas_specs, spacing=8),
             ],
             spacing=10,
-            expand=True,
         ),
         bgcolor=PANEL,
         padding=20,
         border_radius=12,
-        expand=True,
+        col={"xs": 12, "md": 6},
     )
 
 # Genera la vista completa de diagnostico de hardware ocupando toda la pantalla
-def crear_vista_sensores():
+def crear_ficha_sensor_agregado(sensor):
+    return ft.Container(
+        col={"xs": 12, "md": 6},
+        bgcolor=PANEL,
+        padding=20,
+        border_radius=12,
+        content=ft.Column(
+            controls=[
+                ft.Text(sensor["nombre"], size=16, color=TEXTO, weight=ft.FontWeight.BOLD),
+                ft.Text(sensor["descripcion"], size=13, color=TEXTO_SEC),
+                ft.Text(f"Pines: {sensor['pines']}", size=13, color=TEXTO),
+                ft.Text(VISUALIZACIONES[sensor["visualizacion"]], size=13, color=AZUL),
+            ],
+            spacing=6,
+        ),
+    )
+
+
+def abrir_formulario_sensor(page, on_guardar, on_cerrar):
+    nombre = ft.TextField(label="Nombre", max_length=40, autofocus=True)
+    descripcion = ft.TextField(label="Descripción", multiline=True, max_lines=4, max_length=240)
+    pines = ft.TextField(label="Pines", hint_text="Ejemplo: GPIO 32 o SDA 21, SCL 22", max_length=80)
+    visualizacion = ft.Dropdown(
+        label="Visualización en Dashboard",
+        value="grafica",
+        options=[ft.dropdown.Option(key=clave, text=texto) for clave, texto in VISUALIZACIONES.items()],
+    )
+    error = ft.Text(color=ROJO, visible=False)
+
+    async def cerrar(e):
+        on_cerrar()
+
+    async def cancelar(e):
+        on_cerrar()
+        page.pop_dialog()
+
+    async def guardar(e):
+        try:
+            on_guardar(nombre.value, descripcion.value, pines.value, visualizacion.value)
+        except (ValueError, OSError) as problema:
+            error.value = str(problema) if isinstance(problema, ValueError) else "No se pudo guardar el sensor."
+            error.visible = True
+            page.update()
+            return
+        on_cerrar()
+        page.pop_dialog()
+        page.update()
+
+    page.show_dialog(ft.AlertDialog(
+        modal=True,
+        title=ft.Text("Agregar sensor"),
+        content=ft.Column(
+            controls=[nombre, descripcion, pines, visualizacion, error],
+            width=360,
+            tight=True,
+            scroll=ft.ScrollMode.AUTO,
+            horizontal_alignment=ft.CrossAxisAlignment.STRETCH,
+        ),
+        actions=[
+            ft.Button(content="Cancelar", on_click=cancelar),
+            ft.Button(content="Agregar", on_click=guardar),
+        ],
+        on_dismiss=cerrar,
+    ))
+
+
+def crear_vista_sensores(fichas_agregadas, on_agregar):
     
     # Ficha del Sensor DHT22
     ficha_dht22 = crear_ficha_hardware(
         titulo="SENSOR DHT22",
-        estado_texto="OPERATIVO",
-        estado_color=VERDE,
+        estado_texto="SIN TELEMETRÍA",
+        estado_color=TEXTO_SEC,
         pin_texto="GPIO 4 (Digital)",
         especificaciones=[
             ("Rango Temp", "-40 °C a 80 °C"),
             ("Precisión T", "±0.5 °C"),
             ("Rango Hum", "0% a 100% HR"),
-            ("Muestreo", "Cada 3.0 seg"),
+            ("Muestreo previsto", "Cada 3.0 seg en el firmware"),
         ],
         icono=ft.Icons.THERMOSTAT,
         icono_color=AZUL,
@@ -93,14 +159,14 @@ def crear_vista_sensores():
     # Ficha del Sensor LDR (Fotoresistencia)
     ficha_ldr = crear_ficha_hardware(
         titulo="SENSOR LDR (Luz)",
-        estado_texto="OPERATIVO",
-        estado_color=VERDE,
+        estado_texto="SIN TELEMETRÍA",
+        estado_color=TEXTO_SEC,
         pin_texto="GPIO 34 (ADC 12-bit)",
         especificaciones=[
             ("Resolución ADC", "0 - 4095 (11dB)"),
             ("Rango Escala", "0% a 100%"),
             ("Voltaje Op.", "3.3 V"),
-            ("Lectura Raw", "819 (Actual)"),
+            ("Lectura ADC", "Disponible al conectar el hardware"),
         ],
         icono=ft.Icons.WB_SUNNY,
         icono_color=AMARILLO,
@@ -109,14 +175,14 @@ def crear_vista_sensores():
     # Ficha del Actuador LED de Alerta
     ficha_led = crear_ficha_hardware(
         titulo="ACTUADOR LED ALERTA",
-        estado_texto="AUTOMÁTICO / OK",
-        estado_color=VERDE,
+        estado_texto="SIN TELEMETRÍA",
+        estado_color=TEXTO_SEC,
         pin_texto="GPIO 23 (Salida)",
         especificaciones=[
             ("Tipo", "Diodo LED indicador"),
             ("Lógica", "Activo en ALTO (3.3V)"),
-            ("Disparador", "Temp > 39.0 °C"),
-            ("Estado actual", "Apagado (Sin sobrecalentamiento)"),
+            ("Disparador del firmware", "Temp > 39.0 °C"),
+            ("Estado", "Disponible al conectar el hardware"),
         ],
         icono=ft.Icons.LIGHTBULB_OUTLINE,
         icono_color=VERDE,
@@ -125,8 +191,8 @@ def crear_vista_sensores():
     # Ficha de la Pantalla OLED SSD1306
     ficha_oled = crear_ficha_hardware(
         titulo="PANTALLA OLED SSD1306",
-        estado_texto="ACTIVA",
-        estado_color=VERDE,
+        estado_texto="FICHA TÉCNICA",
+        estado_color=TEXTO_SEC,
         pin_texto="I2C (SDA=21 | SCL=22)",
         especificaciones=[
             ("Resolución", "128 x 64 píxeles"),
@@ -138,15 +204,28 @@ def crear_vista_sensores():
         icono_color=AZUL,
     )
 
-    # Distribucion en 2 filas de 2 columnas que se reparten toda la altura
+    fichas_base = (ficha_dht22, ficha_ldr, ficha_led, ficha_oled)
+
     return ft.Container(
         content=ft.Column(
             controls=[
-                ft.Row(controls=[ficha_dht22, ficha_ldr], spacing=16, expand=True),
-                ft.Row(controls=[ficha_led, ficha_oled], spacing=16, expand=True),
+                ft.Row(
+                    controls=[
+                        ft.Text("Sensores y componentes", size=21, color=TEXTO, expand=True),
+                        ft.IconButton(
+                            icon=ft.Icons.ADD,
+                            icon_color=TEXTO,
+                            bgcolor=PANEL_2,
+                            tooltip="Agregar sensor",
+                            on_click=on_agregar,
+                        ),
+                    ],
+                ),
+                fichas_agregadas,
+                ft.ResponsiveRow(controls=list(fichas_base), spacing=16, run_spacing=16),
             ],
             spacing=16,
-            expand=True,
+            scroll=ft.ScrollMode.AUTO,
         ),
         padding=20,
         expand=True,

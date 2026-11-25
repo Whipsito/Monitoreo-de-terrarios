@@ -1,6 +1,7 @@
 import flet as ft
 import ui.estilos as estilos
 from ui.estilos import *
+from services.preferencias import ECOSISTEMAS
 
 
 # Envuelve un TextField o Dropdown con su etiqueta por fuera y ancho completo
@@ -41,16 +42,22 @@ def crear_bloque_config(titulo, icono, icono_color, controles, alto=None):
 
 # Genera la vista completa de configuraciones del sistema
 def crear_vista_configuracion(
-    on_cambiar_tema=None,
-    on_cambiar_simulacion=None,
-    on_cambiar_ecosistema=None,
-    simulacion_activa=False,
-    ecosistema_seleccionado="Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
+    preferencias,
+    simulacion_activa,
+    senal_interrumpida,
+    on_cambiar_tema,
+    on_cambiar_simulacion,
+    on_cambiar_ecosistema,
+    on_guardar,
+    on_restablecer,
+    on_limpiar,
+    on_prueba_termica,
+    on_alternar_senal,
 ):
 
     # 1. Seccion de perfil del terrario y tipo de especie
     campo_nombre = ft.TextField(
-        value="Terrario Papu #1",
+        value=preferencias["nombre"],
         bgcolor=PANEL_2,
         border_color=PANEL_2,
         color=TEXTO,
@@ -59,26 +66,26 @@ def crear_vista_configuracion(
     )
 
     selector_ecosistema = ft.Dropdown(
-        value=ecosistema_seleccionado,
+        value=preferencias["ecosistema"],
         options=[
             ft.dropdown.Option(
-                key="Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
-                text="Tropical / Selva (Hum: 70-90% | Temp: 24-28°C)",
+                key=ECOSISTEMAS[0],
+                text=ECOSISTEMAS[0],
                 leading_icon=ft.Icons.FOREST,
             ),
             ft.dropdown.Option(
-                key="Desértico / Árido (Hum: 15-30% | Temp: 28-36°C)",
-                text="Desértico / Árido (Hum: 15-30% | Temp: 28-36°C)",
+                key=ECOSISTEMAS[1],
+                text=ECOSISTEMAS[1],
                 leading_icon=ft.Icons.WB_SUNNY,
             ),
             ft.dropdown.Option(
-                key="Templado / Bosque (Hum: 50-70% | Temp: 20-25°C)",
-                text="Templado / Bosque (Hum: 50-70% | Temp: 20-25°C)",
+                key=ECOSISTEMAS[2],
+                text=ECOSISTEMAS[2],
                 leading_icon=ft.Icons.PARK,
             ),
             ft.dropdown.Option(
-                key="Personalizado",
-                text="Personalizado",
+                key=ECOSISTEMAS[3],
+                text="Perfil general (rangos de prueba)",
                 leading_icon=ft.Icons.TUNE,
             ),
         ],
@@ -104,14 +111,14 @@ def crear_vista_configuracion(
     temas_info = {
         "Oscuro":         "#38BDF8",
         "Claro":          "#0284C7",
-        "Verde Terrario": "#22C55E",
+        "Verde Terrario": estilos.TEMAS["Verde Terrario"]["VERDE"],
         "Nocturno Ámbar": "#F59E0B",
     }
 
-    def seleccionar_tema(nombre_tema):
-        aplicar_tema(nombre_tema)
-        if on_cambiar_tema:
-            on_cambiar_tema()
+    def crear_accion_tema(nombre_tema):
+        async def seleccionar_tema(e):
+            on_cambiar_tema(nombre_tema, leer_formulario())
+        return seleccionar_tema
 
     opciones_tema = []
     for nombre_tema, color_acento in temas_info.items():
@@ -131,7 +138,7 @@ def crear_vista_configuracion(
                 border=ft.Border.all(1, AZUL if es_activo else PANEL_2),
                 expand=True,
                 ink=True,
-                on_click=lambda e, t=nombre_tema: seleccionar_tema(t),
+                on_click=crear_accion_tema(nombre_tema),
             )
         )
 
@@ -149,29 +156,29 @@ def crear_vista_configuracion(
     )
 
     # 3. Seccion de alertas y sonidos
+    notificaciones = ft.Switch(value=preferencias["notificaciones"], active_color=VERDE)
+    sonido_termico = ft.Switch(value=preferencias["sonido_termico"], active_color=ROJO)
+    sonido_desconexion = ft.Switch(value=preferencias["sonido_desconexion"], active_color=AMARILLO)
     switch_notificaciones = ft.Row(
         controls=[
             ft.Text("Notificaciones de escritorio (Windows)", size=13, color=TEXTO),
-            ft.Switch(
-                value=True,
-                active_color=VERDE,
-            ),
+            notificaciones,
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )
 
     switch_beep = ft.Row(
         controls=[
-            ft.Text("Alerta sonora (Beep) al superar 39.0 °C", size=13, color=TEXTO),
-            ft.Switch(value=False, active_color=ROJO),
+            ft.Text("Sonido al superar el umbral térmico", size=13, color=TEXTO),
+            sonido_termico,
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )
 
     switch_desconexion = ft.Row(
         controls=[
-            ft.Text("Alerta sonora al perder señal de ESP32", size=13, color=TEXTO),
-            ft.Switch(value=False, active_color=AMARILLO),
+            ft.Text("Sonido al perder señal (prueba en modo demo)", size=13, color=TEXTO),
+            sonido_desconexion,
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )
@@ -181,10 +188,15 @@ def crear_vista_configuracion(
         icono=ft.Icons.NOTIFICATIONS_ACTIVE_OUTLINED,
         icono_color=AMARILLO,
         controles=[switch_notificaciones, switch_beep, switch_desconexion],
-        alto=225,
     )
 
     # 4. Seccion de simulacion y registro de datos
+    async def cambiar_demo(e):
+        boton_prueba.disabled = not e.control.value
+        boton_senal.disabled = not e.control.value
+        boton_senal.content = "Simular pérdida de señal"
+        on_cambiar_simulacion(e)
+
     switch_demo = ft.Row(
         controls=[
             ft.Column(
@@ -197,12 +209,13 @@ def crear_vista_configuracion(
             ft.Switch(
                 value=simulacion_activa,
                 active_color=VERDE,
-                on_change=on_cambiar_simulacion,
+                on_change=cambiar_demo,
             ),
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )
 
+    csv_automatico = ft.Switch(value=preferencias["csv_automatico"], active_color=AZUL)
     switch_csv_auto = ft.Row(
         controls=[
             ft.Column(
@@ -212,7 +225,7 @@ def crear_vista_configuracion(
                 ],
                 spacing=2,
             ),
-            ft.Switch(value=False, active_color=AZUL),
+            csv_automatico,
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
     )
@@ -223,19 +236,34 @@ def crear_vista_configuracion(
         color=ROJO,
         bgcolor=PANEL_2,
         height=36,
+        on_click=on_limpiar,
+    )
+    boton_prueba = ft.Button(
+        content="Probar alerta térmica",
+        disabled=not simulacion_activa,
+        on_click=on_prueba_termica,
+    )
+    boton_senal = ft.Button(
+        content="Recuperar señal" if senal_interrumpida else "Simular pérdida de señal",
+        disabled=not simulacion_activa,
+        on_click=on_alternar_senal,
     )
 
     bloque_simulacion = crear_bloque_config(
         titulo="Simulación y Datos",
         icono=ft.Icons.SCIENCE_OUTLINED,
         icono_color=AZUL,
-        controles=[switch_demo, switch_csv_auto, boton_limpiar],
-        alto=225,
+        controles=[
+            switch_demo,
+            switch_csv_auto,
+            ft.Row([boton_prueba, boton_senal], wrap=True),
+            boton_limpiar,
+        ],
     )
 
     # 5. Seccion de umbrales y conexion de red
     campo_umbral = ft.TextField(
-        value="39.0",
+        value=str(preferencias["umbral"]),
         bgcolor=PANEL_2,
         border_color=PANEL_2,
         color=TEXTO,
@@ -244,7 +272,7 @@ def crear_vista_configuracion(
     )
 
     campo_intervalo = ft.TextField(
-        value="3",
+        value=str(preferencias["intervalo"]),
         bgcolor=PANEL_2,
         border_color=PANEL_2,
         color=TEXTO,
@@ -261,7 +289,7 @@ def crear_vista_configuracion(
     )
 
     campo_url = ft.TextField(
-        value="http://0.0.0.0:8000/datos",
+        value=preferencias["url"],
         bgcolor=PANEL_2,
         border_color=PANEL_2,
         color=TEXTO,
@@ -275,17 +303,35 @@ def crear_vista_configuracion(
         icono_color=AZUL,
         controles=[
             fila_umbrales,
-            crear_campo_etiquetado("URL / Endpoint del Servidor", campo_url),
+            crear_campo_etiquetado("URL para la futura conexión con ESP32", campo_url),
         ],
     )
 
     # 6. Botones de accion principales
+    def leer_formulario():
+        return {
+            "nombre": campo_nombre.value,
+            "ecosistema": selector_ecosistema.value,
+            "tema": estilos.TEMA_ACTUAL,
+            "notificaciones": notificaciones.value,
+            "sonido_termico": sonido_termico.value,
+            "sonido_desconexion": sonido_desconexion.value,
+            "csv_automatico": csv_automatico.value,
+            "umbral": campo_umbral.value,
+            "intervalo": campo_intervalo.value,
+            "url": campo_url.value,
+        }
+
+    async def guardar(e):
+        on_guardar(leer_formulario())
+
     boton_guardar = ft.Button(
         content="Guardar Configuración",
         icon=ft.Icons.SAVE_OUTLINED,
         color=FONDO,
         bgcolor=VERDE,
         height=42,
+        on_click=guardar,
     )
 
     boton_restablecer = ft.Button(
@@ -294,6 +340,7 @@ def crear_vista_configuracion(
         color=TEXTO,
         bgcolor=PANEL_2,
         height=42,
+        on_click=on_restablecer,
     )
 
     fila_botones = ft.Row(
