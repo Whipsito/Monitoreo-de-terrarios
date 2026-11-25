@@ -1,33 +1,45 @@
-from time import sleep
+import asyncio
+from binascii import hexlify
+from os import urandom
+from time import ticks_add, ticks_diff, ticks_ms
+
 from config import Dispositivos
-from config_wifi import RedWiFi
+from config_wifi import SSID, iniciar_red
+from servidor_http import ServidorLecturas
 
-class SistemaTransmision:
-    def __init__(self):
-        # Conexión a la red Wi-Fi simulada en Wokwi
-        self.ssid = "Wokwi-GUEST"
-        self.password = ""
 
-        self.red = RedWiFi(self.ssid, self.password)
-        self.hw = Dispositivos()
+async def ejecutar():
+    red = iniciar_red()
+    ip = red.ifconfig()[0]
+    servidor = ServidorLecturas(ip)
+    await servidor.iniciar()
+    print("Red Wi-Fi:", SSID)
+    print("Lecturas: http://" + ip + "/datos")
 
-    def ejecutar(self):
-        self.red.conectar()
-
-        while True:
-            self.red.verificar_conexion()
-
+    hardware = Dispositivos()
+    arranque = hexlify(urandom(8)).decode()
+    numero = 0
+    while True:
+        siguiente = ticks_add(ticks_ms(), 3000)
+        try:
+            temp, humedad, luz, led = hardware.leer_sensores()
+        except OSError as error:
+            print("No se pudo leer el sensor:", error)
+        else:
+            numero += 1
+            servidor.publicar({
+                "temperatura": temp,
+                "humedad": humedad,
+                "luz": luz,
+                "led": led,
+                "id_lectura": "{}-{}".format(arranque, numero),
+            })
             try:
-                temp, hum, luz_porcentaje, estado_temp = self.hw.leer_sensores()
-                self.hw.actualizar_pantalla(temp, hum, luz_porcentaje, estado_temp)
-                self.hw.enviar_datos(temp, hum, luz_porcentaje, estado_temp)
+                hardware.actualizar_pantalla(temp, humedad, luz, led)
+            except OSError as error:
+                print("Error al actualizar OLED:", error)
+        await asyncio.sleep_ms(max(1, ticks_diff(siguiente, ticks_ms())))
 
-            except Exception as e:
-                print(f"Error durante el ciclo: {e}")
-
-            # Pausa de 3 segundos entre cada transmisión
-            sleep(3)
 
 if __name__ == "__main__":
-    sistema = SistemaTransmision()
-    sistema.ejecutar()
+    asyncio.run(ejecutar())

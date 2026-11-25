@@ -1,5 +1,6 @@
 import asyncio
 from collections import deque
+from http.client import HTTPException
 from math import ceil, floor
 from pathlib import Path
 from time import monotonic
@@ -10,11 +11,13 @@ import ui.estilos as estilos
 from ui.estilos import *
 from ui.graficas import crear_grafica_linea, crear_indicador_circular, crear_panel_sensor
 from ui.eventos import crear_panel_eventos, actualizar_lista_eventos
+from ui.formato import formatear_medicion
 from ui.sensores import abrir_formulario_sensor, crear_ficha_sensor_agregado, crear_vista_sensores
 from ui.configuracion import crear_vista_configuracion
 from services.simulador import generar_lectura_simulada, generar_valor_sensor
-from services.catalogo_sensores import agregar_sensor, cargar_sensores
+from services.catalogo_sensores import agregar_sensor, cargar_sensores, editar_sensor, eliminar_sensor
 from services.registro_eventos import RegistroEventos
+from services.recibir_datos import recibir_lectura
 from services.alertas import notificar_escritorio, reproducir_alerta
 from services.preferencias import (
     PREDETERMINADAS,
@@ -96,6 +99,9 @@ def main(page: ft.Page):
         "lectura": None,
         "hora": None,
     }
+    estado_esp32 = "buscando"
+    version_fuente = 0
+    ultimo_id_esp32 = None
     senal_interrumpida = False
     alerta_activa = False
     proxima_lectura = monotonic()
@@ -187,24 +193,26 @@ def main(page: ft.Page):
             proximo_csv = monotonic() + intervalo_csv
         if preferencias["umbral"] != nuevas["umbral"]:
             alerta_activa = False
+        cambio_url = preferencias["url"] != nuevas["url"]
         preferencias.update(nuevas)
+        if cambio_url and not modo_simulacion["activo"]:
+            reiniciar_fuente()
         controles_simulacion["nombre"].value = preferencias["nombre"]
         page.update()
         informar("Configuración guardada.")
 
     async def restablecer(e):
         def aplicar_valores():
-            nonlocal senal_interrumpida, alerta_activa, proximo_csv
+            nonlocal senal_interrumpida, proximo_csv
             try:
                 guardar_preferencias(PREDETERMINADAS)
             except OSError:
                 informar("No se pudieron guardar los valores predeterminados.")
                 return
             preferencias.update(PREDETERMINADAS)
-            estado_datos["lectura_anterior"] = None
             modo_simulacion["activo"] = False
             senal_interrumpida = False
-            alerta_activa = False
+            reiniciar_fuente()
             proximo_csv = monotonic() + intervalo_csv
             aplicar_tema(preferencias["tema"])
             page.bgcolor = FONDO
@@ -357,12 +365,10 @@ def main(page: ft.Page):
         texto_ultima_lectura = ft.Text(size=13, color=TEXTO_SEC)
 
         def cambiar_modo_simulacion(e):
-            nonlocal senal_interrumpida, alerta_activa, proxima_lectura
+            nonlocal senal_interrumpida
             modo_simulacion["activo"] = e.control.value
             senal_interrumpida = False
-            alerta_activa = False
-            proxima_lectura = monotonic()
-            actualizar_estado_conexion()
+            reiniciar_fuente()
             page.update()
 
         async def cambiar_ecosistema(e):
@@ -522,10 +528,34 @@ def main(page: ft.Page):
         def mostrar_sensor(sensor):
             tarjeta, actualizar = crear_panel_sensor(sensor)
             identificador = sensor["id"]
+
+            async def editar(e):
+                abrir_editor_sensor(sensor)
+
+            async def eliminar(e):
+                if confirmacion_abierta:
+                    return
+
+                def borrar():
+                    try:
+                        eliminar_sensor(sensores_agregados, identificador)
+                    except (OSError, ValueError):
+                        informar("No se pudo eliminar el sensor del catálogo.")
+                        return
+                    historial_sensores.pop(identificador, None)
+                    reconstruir_sensores_agregados()
+                    page.update()
+
+                confirmar(
+                    "Eliminar sensor",
+                    f"Se borrará «{sensor['nombre']}» de Sensores y del Dashboard.",
+                    borrar,
+                )
+
             actualizar(historial_sensores[identificador])
             actualizadores_sensores[identificador] = actualizar
             paneles_agregados.controls.append(tarjeta)
-            fichas_agregadas.controls.append(crear_ficha_sensor_agregado(sensor))
+            fichas_agregadas.controls.append(crear_ficha_sensor_agregado(sensor, editar, eliminar))
 
         def ajustar_dashboard():
             hay_sensores = bool(sensores_agregados)
@@ -535,25 +565,38 @@ def main(page: ft.Page):
             seccion_inferior.expand = None if hay_sensores else 2
             seccion_inferior.height = 450 if hay_sensores else None
 
-        def guardar_sensor(nombre, descripcion, pines, visualizacion):
-            sensor = agregar_sensor(sensores_agregados, nombre, descripcion, pines, visualizacion)
-            historial_sensores[sensor["id"]] = deque(maxlen=20)
-            mostrar_sensor(sensor)
+        def reconstruir_sensores_agregados():
+            paneles_agregados.controls.clear()
+            fichas_agregadas.controls.clear()
+            actualizadores_sensores.clear()
+            for sensor in sensores_agregados:
+                mostrar_sensor(sensor)
             ajustar_dashboard()
 
-        async def abrir_alta_sensor(e):
+        def abrir_editor_sensor(sensor=None):
             nonlocal confirmacion_abierta
+            if confirmacion_abierta:
+                return
+
+            def guardar(nombre, descripcion, pines, visualizacion):
+                if sensor is None:
+                    nuevo = agregar_sensor(sensores_agregados, nombre, descripcion, pines, visualizacion)
+                    historial_sensores[nuevo["id"]] = deque(maxlen=20)
+                else:
+                    editar_sensor(sensores_agregados, sensor["id"], nombre, descripcion, pines, visualizacion)
+                reconstruir_sensores_agregados()
 
             def cerrar_formulario():
                 nonlocal confirmacion_abierta
                 confirmacion_abierta = False
 
             confirmacion_abierta = True
-            abrir_formulario_sensor(page, guardar_sensor, cerrar_formulario)
+            abrir_formulario_sensor(page, guardar, cerrar_formulario, sensor)
 
-        for sensor in sensores_agregados:
-            mostrar_sensor(sensor)
-        ajustar_dashboard()
+        async def abrir_alta_sensor(e):
+            abrir_editor_sensor()
+
+        reconstruir_sensores_agregados()
 
         # Vista 0: Dashboard con margen interno
         cuerpo_dashboard = ft.Container(
@@ -563,7 +606,13 @@ def main(page: ft.Page):
         )
 
         # Vista 1: Sensores y Diagnostico de Hardware
-        vista_sensores = crear_vista_sensores(fichas_agregadas, abrir_alta_sensor)
+        aviso_sensores = ft.Text(
+            "El ESP32 está conectado. Aún no hay mediciones de los sensores.",
+            size=14,
+            color=TEXTO,
+            visible=False,
+        )
+        vista_sensores = crear_vista_sensores(fichas_agregadas, abrir_alta_sensor, aviso_sensores)
 
         # Vista 2: Configuracion del Sistema (con callback de cambio de tema)
         vista_configuracion = crear_vista_configuracion(
@@ -599,6 +648,7 @@ def main(page: ft.Page):
             nombre=nombre_terrario,
             lista_eventos=lista_eventos,
             sensores=actualizadores_sensores,
+            aviso_sensores=aviso_sensores,
         )
 
         # Solo se desvanece el contenido al navegar.
@@ -637,13 +687,38 @@ def main(page: ft.Page):
         elif modo_simulacion["activo"]:
             estado, color = "Modo simulación", VERDE
         else:
-            estado, color = "Modo simulación apagado", TEXTO_SEC
+            estado, color = {
+                "buscando": ("Buscando ESP32", TEXTO_SEC),
+                "conectado": ("ESP32 conectado", VERDE),
+                "sin_datos": ("ESP32 conectado · Sin mediciones", VERDE),
+                "sin_conexion": ("ESP32 sin conexión", ROJO),
+                "respuesta_invalida": ("Respuesta del ESP32 inválida", ROJO),
+            }[estado_esp32]
         controles_simulacion["estado"].value = estado
         controles_simulacion["punto"].color = color
-        hora = estado_datos["hora"]
-        controles_simulacion["hora"].value = (
-            f"Última simulada: {hora}" if hora else "Sin lecturas"
+        controles_simulacion["aviso_sensores"].visible = (
+            not modo_simulacion["activo"] and estado_esp32 == "sin_datos"
         )
+        hora = estado_datos["hora"]
+        origen = "simulada" if modo_simulacion["activo"] else "del ESP32"
+        controles_simulacion["hora"].value = (
+            f"Última {origen}: {hora}" if hora else "Sin lecturas"
+        )
+
+    def reiniciar_fuente():
+        nonlocal version_fuente, estado_esp32, ultimo_id_esp32, proxima_lectura, alerta_activa
+        version_fuente += 1
+        estado_esp32 = "buscando"
+        ultimo_id_esp32 = None
+        proxima_lectura = monotonic()
+        alerta_activa = False
+        estado_datos.update(lectura=None, hora=None, lectura_anterior=None)
+        for historial in historial_sensores.values():
+            historial.clear()
+        actualizar_sensores_agregados()
+        actualizar_mediciones()
+        actualizar_historial()
+        actualizar_estado_conexion()
 
     def actualizar_sensores_agregados():
         for identificador, actualizar in controles_simulacion["sensores"].items():
@@ -651,34 +726,40 @@ def main(page: ft.Page):
 
     def actualizar_mediciones():
         lectura = estado_datos["lectura"]
-        if lectura is None:
-            return
-        temperatura, humedad, luz = (lectura[clave] for clave in ("temperatura", "humedad", "luz"))
         tarjetas = controles_simulacion["tarjetas"]
-        lecturas = (temperatura, humedad, luz)
-        barras = (max(0, min(1, temperatura / 50)), humedad / 100, luz / 100)
+        if lectura is None:
+            lecturas = ("—", "—", "—")
+            barras = (0, 0, 0)
+        else:
+            temperatura, humedad, luz = (lectura[clave] for clave in ("temperatura", "humedad", "luz"))
+            lecturas = (temperatura, humedad, luz)
+            barras = (max(0, min(1, temperatura / 50)), humedad / 100, luz / 100)
         for tarjeta, valor, barra in zip(tarjetas, lecturas, barras):
-            tarjeta.content.controls[1].controls[0].value = str(valor)
+            tarjeta.content.controls[1].controls[0].value = formatear_medicion(valor) if lectura else "—"
             tarjeta.content.controls[2].value = barra
 
-        for medidor, valor in zip(controles_simulacion["medidores"], (humedad, luz)):
+        for medidor, valor, barra in zip(controles_simulacion["medidores"], lecturas[1:], barras[1:]):
             anillo = medidor.content.controls[1]
-            anillo.controls[0].value = valor / 100
-            anillo.controls[1].content.value = f"{valor:.0f}%"
+            anillo.controls[0].value = barra
+            anillo.controls[1].content.value = f"{formatear_medicion(valor)}%" if lectura else "—"
 
-        led_encendido = lectura["led"] == "ALTA"
+        led_encendido = lectura is not None and lectura["led"] == "ALTA"
         tarjeta_led = tarjetas[3].content
         tarjeta_led.controls[0].controls[1].color = ROJO if led_encendido else VERDE
-        tarjeta_led.controls[1].controls[0].value = lectura["led"]
-        tarjeta_led.controls[2].value = "LED: ON" if led_encendido else "LED: OFF"
+        tarjeta_led.controls[1].controls[0].value = lectura["led"] if lectura else "—"
+        tarjeta_led.controls[2].value = ("LED: ON" if led_encendido else "LED: OFF") if lectura else "Sin lecturas"
 
     def actualizar_historial():
         eventos = registro.obtener_recientes()
         actualizar_lista_eventos(controles_simulacion["lista_eventos"], eventos)
         grafica = controles_simulacion["grafica"]
-        temperaturas = [evento["temperatura"] for evento in reversed(eventos)]
+        temperaturas = [
+            evento["temperatura"]
+            for evento in registro.eventos
+            if (evento["origen"] != "esp32") == modo_simulacion["activo"]
+        ][:20][::-1]
         grafica.data_series[0].points = [
-            fch.LineChartDataPoint(indice, valor) for indice, valor in enumerate(temperaturas)
+            fch.LineChartDataPoint(indice, round(valor, 1)) for indice, valor in enumerate(temperaturas)
         ]
         grafica.max_x = max(5, len(temperaturas) - 1)
         grafica.min_y = 5 * floor(min([20, *temperaturas]) / 5)
@@ -690,9 +771,9 @@ def main(page: ft.Page):
             for valor in range(grafica.min_y, grafica.max_y + 1, paso)
         ]
 
-    def registrar_lectura(lectura, prueba=False):
+    def registrar_lectura(lectura, prueba=False, origen="simulacion"):
         nonlocal alerta_activa, cambios_sin_exportar
-        evento = registro.agregar_lectura(lectura, prueba=prueba)
+        evento = registro.agregar_lectura(lectura, prueba=prueba, origen=origen)
         cambios_sin_exportar = True
         estado_datos["lectura"] = lectura
         estado_datos["hora"] = evento["hora"]
@@ -706,9 +787,10 @@ def main(page: ft.Page):
         if not prueba:
             alerta_activa = hay_alerta
         if aviso:
-            mensaje = f"Temperatura alta: {lectura['temperatura']} °C"
+            temperatura = formatear_medicion(lectura["temperatura"])
+            mensaje = f"Temperatura alta: {temperatura} °C"
             if prueba:
-                mensaje = f"Prueba de alerta: {lectura['temperatura']} °C"
+                mensaje = f"Prueba de alerta: {temperatura} °C"
             emitir_alerta(mensaje, preferencias["sonido_termico"])
 
     async def probar_alerta_termica(e):
@@ -735,11 +817,40 @@ def main(page: ft.Page):
         if senal_interrumpida:
             emitir_alerta("Se interrumpió la señal simulada.", preferencias["sonido_desconexion"])
 
-    async def actualizar_datos_simulados():
+    async def consultar_esp32():
+        nonlocal estado_esp32, ultimo_id_esp32
+        version = version_fuente
+        lectura = None
+        try:
+            lectura = await asyncio.to_thread(recibir_lectura, preferencias["url"])
+            estado = "conectado" if lectura else "sin_datos"
+        except OSError:
+            estado = "sin_conexion"
+        except (ValueError, HTTPException):
+            estado = "respuesta_invalida"
+
+        if version != version_fuente:
+            return  # Cambió el modo o la URL mientras se esperaba la respuesta.
+        anterior = estado_esp32
+        estado_esp32 = estado
+        if lectura and lectura["id_lectura"] != ultimo_id_esp32:
+            ultimo_id_esp32 = lectura["id_lectura"]
+            registrar_lectura(lectura, origen="esp32")
+        elif estado != anterior:
+            actualizar_estado_conexion()
+            page.update()
+        if anterior in ("conectado", "sin_datos") and estado == "sin_conexion":
+            emitir_alerta("Se perdió la conexión con el ESP32.", preferencias["sonido_desconexion"])
+
+    async def actualizar_datos():
         nonlocal proxima_lectura, proximo_csv
         while True:
             ahora = monotonic()
-            if modo_simulacion["activo"] and not senal_interrumpida and ahora >= proxima_lectura:
+            if not modo_simulacion["activo"] and ahora >= proxima_lectura:
+                proxima_lectura = ahora + preferencias["intervalo"]
+                await consultar_esp32()
+                ahora = monotonic()
+            elif modo_simulacion["activo"] and not senal_interrumpida and ahora >= proxima_lectura:
                 proxima_lectura = ahora + preferencias["intervalo"]
                 lectura = generar_lectura_simulada(
                     preferencias["ecosistema"],
@@ -759,7 +870,7 @@ def main(page: ft.Page):
             await asyncio.sleep(0.25)
 
     construir_interfaz()
-    page.run_task(actualizar_datos_simulados)
+    page.run_task(actualizar_datos)
 
 # Punto de inicio de la aplicacion
 ft.run(main)

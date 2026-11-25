@@ -21,7 +21,7 @@ PREDETERMINADAS = {
     "csv_automatico": False,
     "umbral": 39.0,
     "intervalo": 3,
-    "url": "http://0.0.0.0:8000/datos",
+    "url": "http://192.168.4.1/datos",
 }
 RUTA = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".config") / "TerraPapu" / "configuracion.json"
 
@@ -48,6 +48,7 @@ def validar_preferencias(datos):
         if (
             partes.scheme not in ("http", "https")
             or not partes.hostname
+            or partes.hostname in ("0.0.0.0", "::")
             or partes.username is not None
             or partes.fragment
             or any(c.isspace() for c in url)
@@ -70,6 +71,8 @@ def cargar_preferencias():
     try:
         datos = json.loads(RUTA.read_text(encoding="utf-8"))
         if isinstance(datos, dict):
+            if datos.get("url") == "http://0.0.0.0:8000/datos":
+                datos["url"] = PREDETERMINADAS["url"]
             return validar_preferencias({
                 clave: datos.get(clave, valor) for clave, valor in PREDETERMINADAS.items()
             })

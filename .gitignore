@@ -4,3 +4,11 @@
 # Archivos temporales generados por Python
 __pycache__/
 *.py[cod]
+
+# Archivos generados al empaquetar TerraPapu con Flet
+/build/
+/dist/
+/TerraPapu.spec
+/interfaz/build/
+/interfaz/dist/
+/interfaz/TerraPapu.spec

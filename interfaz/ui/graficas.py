@@ -1,5 +1,6 @@
 import flet as ft
 import flet_charts as fch
+from ui.formato import formatear_medicion
 from ui.estilos import AZUL, AMARILLO, PANEL, PANEL_2, TEXTO, TEXTO_SEC
 
 # Genera la grafica de linea para la temperatura
@@ -8,7 +9,7 @@ def crear_grafica_linea(valores=(), minimo=20, maximo=40, paso=5, unidad="°C"):
     # Serie de datos con los puntos de temperatura y puntos visibles
     serie_temperatura = fch.LineChartData(
         points=[
-            fch.LineChartDataPoint(indice, valor)
+            fch.LineChartDataPoint(indice, round(valor, 1))
             for indice, valor in enumerate(valores)
         ],
         color=AZUL,
@@ -53,7 +54,7 @@ def crear_panel_sensor(sensor):
 
         def actualizar(historial):
             progreso.value = historial[-1] / 100 if historial else 0
-            etiqueta.value = f"{historial[-1]}%" if historial else "—"
+            etiqueta.value = f"{formatear_medicion(historial[-1])}%" if historial else "—"
 
     else:
         grafica = crear_grafica_linea(minimo=0, maximo=100, paso=25, unidad="")
@@ -63,9 +64,9 @@ def crear_panel_sensor(sensor):
         contenido = ft.Column([etiqueta, grafica], spacing=5)
 
         def actualizar(historial):
-            etiqueta.value = f"Último valor: {historial[-1]}" if historial else "Sin lecturas"
+            etiqueta.value = f"Último valor: {formatear_medicion(historial[-1])}" if historial else "Sin lecturas"
             grafica.data_series[0].points = [
-                fch.LineChartDataPoint(indice, valor)
+                fch.LineChartDataPoint(indice, round(valor, 1))
                 for indice, valor in enumerate(historial)
             ]
             grafica.max_x = max(5, len(historial) - 1)

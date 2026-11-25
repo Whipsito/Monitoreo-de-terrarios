@@ -1,4 +1,5 @@
 import flet as ft
+from ui.formato import formatear_medicion
 from ui.estilos import *
 
 # Fila individual para un registro o evento con estilo de tarjeta
@@ -90,12 +91,17 @@ def actualizar_lista_eventos(lista_eventos, eventos):
     filas = []
     for evento in eventos:
         es_alerta = evento["led"] == "ALTA"
+        temperatura = formatear_medicion(evento["temperatura"])
         if evento.get("origen") == "prueba termica":
-            descripcion = f"PRUEBA TÉRMICA: {evento['temperatura']} °C"
+            descripcion = f"PRUEBA TÉRMICA: {temperatura} °C"
         elif es_alerta:
-            descripcion = f"ALERTA: {evento['temperatura']} °C"
+            descripcion = f"ALERTA: {temperatura} °C"
         else:
-            descripcion = f"T:{evento['temperatura']} °C | H:{evento['humedad']}% | L:{evento['luz']}%"
+            humedad = formatear_medicion(evento["humedad"])
+            luz = formatear_medicion(evento["luz"])
+            descripcion = f"T:{temperatura} °C | H:{humedad}% | L:{luz}%"
+        if evento.get("origen") == "esp32":
+            descripcion = f"ESP32 · {descripcion}"
         filas.append(
             crear_evento(
                 evento["hora"],

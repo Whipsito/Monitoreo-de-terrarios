@@ -177,7 +177,7 @@ def crear_vista_configuracion(
 
     switch_desconexion = ft.Row(
         controls=[
-            ft.Text("Sonido al perder señal (prueba en modo demo)", size=13, color=TEXTO),
+            ft.Text("Sonido al perder señal", size=13, color=TEXTO),
             sonido_desconexion,
         ],
         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -282,7 +282,7 @@ def crear_vista_configuracion(
 
     fila_umbrales = ft.Row(
         controls=[
-            crear_campo_etiquetado("Umbral Alerta Térmica (°C)", campo_umbral, expand=True),
+            crear_campo_etiquetado("Umbral térmico de simulación (°C)", campo_umbral, expand=True),
             crear_campo_etiquetado("Intervalo de Refresco (seg)", campo_intervalo, expand=True),
         ],
         spacing=12,
@@ -303,7 +303,7 @@ def crear_vista_configuracion(
         icono_color=AZUL,
         controles=[
             fila_umbrales,
-            crear_campo_etiquetado("URL para la futura conexión con ESP32", campo_url),
+            crear_campo_etiquetado("URL de lecturas del ESP32", campo_url),
         ],
     )
 

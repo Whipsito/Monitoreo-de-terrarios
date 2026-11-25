@@ -58,3 +58,23 @@ def agregar_sensor(sensores, nombre, descripcion, pines, visualizacion):
     guardar_json(RUTA_SENSORES, [*sensores, sensor])
     sensores.append(sensor)
     return sensor
+
+
+def editar_sensor(sensores, identificador, nombre, descripcion, pines, visualizacion):
+    cambios = validar_sensor(nombre, descripcion, pines, visualizacion)
+    for indice, sensor in enumerate(sensores):
+        if sensor["id"] == identificador:
+            nuevo_catalogo = sensores.copy()
+            nuevo_catalogo[indice] = {**sensor, **cambios}
+            guardar_json(RUTA_SENSORES, nuevo_catalogo)
+            sensores[:] = nuevo_catalogo
+            return
+    raise ValueError("El sensor ya no está en el catálogo.")
+
+
+def eliminar_sensor(sensores, identificador):
+    nuevo_catalogo = [sensor for sensor in sensores if sensor["id"] != identificador]
+    if len(nuevo_catalogo) == len(sensores):
+        raise ValueError("El sensor ya no está en el catálogo.")
+    guardar_json(RUTA_SENSORES, nuevo_catalogo)
+    sensores[:] = nuevo_catalogo
